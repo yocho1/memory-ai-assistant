@@ -35,7 +35,7 @@ const Chat = () => {
     setLoading(true)
 
     try {
-      const response = await axios.post('memory-ai-assistant-55hj.vercel.app/chat', {
+      const response = await axios.post('https://memory-ai-assistant-55hj.vercel.app//chat', {
         message: inputMessage,
         user_id: userId,
         conversation_id: conversationId
