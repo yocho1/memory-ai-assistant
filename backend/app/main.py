@@ -5,17 +5,21 @@ import uuid
 from datetime import datetime
 from typing import List
 
-# Remove the "app." prefix from imports
 from models import *
 from memory_engine import MemoryEngine
 from config import settings
 
 app = FastAPI(title="Memory AI Assistant with Gemini", version="1.0.0")
 
-# CORS middleware
+# Enhanced CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://memory-ai-assistant.vercel.app",
+        "https://memory-ai-assistant-wpwf.vercel.app", 
+        "http://localhost:3000",
+        "http://localhost:8000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -23,6 +27,10 @@ app.add_middleware(
 
 # Initialize memory engine with Gemini
 memory_engine = MemoryEngine(settings.DATABASE_URL, settings.GEMINI_API_KEY)
+
+@app.options("/chat")
+async def options_chat():
+    return JSONResponse(content={"status": "ok"})
 
 @app.get("/")
 async def root():
@@ -88,9 +96,6 @@ async def get_conversations(user_id: str):
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now()}
-
-# Remove this line - it's not needed
-# app = app
 
 if __name__ == "__main__":
     import uvicorn
