@@ -15,16 +15,10 @@ app = FastAPI(title="Memory AI Assistant with Gemini", version="1.0.0")
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://memory-ai-assistant-wikd.vercel.app/",  # Your frontend URL
-        "https://memory-ai-assistant-55hj.vercel.app",
-        "https://memory-ai-assistant-wikd.vercel.app"   # Your backend URL (for testing)
-    ],
+    allow_origins=["*"],  # Allow all origins for now
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
 )
 
 # Initialize memory engine with Gemini
