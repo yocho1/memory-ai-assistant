@@ -7,23 +7,25 @@ from typing import List
 import sys
 import os
 
-# Add the app directory to Python path for Vercel
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add the app directory to Python path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, current_dir)
 
+print(f"🔍 Current directory: {current_dir}")
+print(f"📁 Files in app directory: {os.listdir(current_dir)}")
+
+# Import from same directory - no dots
 try:
-    # Try relative imports first
-    from .models import *
-    from .memory_engine import MemoryEngine
-    from .config import settings
-except ImportError:
-    try:
-        # Fallback for absolute imports
-        from models import *
-        from memory_engine import MemoryEngine
-        from config import settings
-    except ImportError as e:
-        print(f"Import error: {e}")
-        raise
+    from models import ChatRequest, ChatResponse
+    from memory_engine import MemoryEngine
+    from config import settings
+    print("✅ All imports successful!")
+except ImportError as e:
+    print(f"❌ Import error: {e}")
+    # List available files to debug
+    files = [f for f in os.listdir(current_dir) if f.endswith('.py')]
+    print(f"📁 Available Python files: {files}")
+    raise
 
 app = FastAPI(title="Memory AI Assistant with Gemini", version="1.0.0")
 
@@ -48,15 +50,27 @@ memory_engine = MemoryEngine(settings.DATABASE_URL, settings.GEMINI_API_KEY)
 async def root():
     return {"message": "Memory AI Assistant with Gemini API"}
 
-# Add a test endpoint to verify everything works
+# Test endpoint to verify everything works
 @app.get("/test")
 async def test_endpoint():
-    return {
-        "status": "success", 
-        "message": "Backend is working!",
-        "database_url": settings.DATABASE_URL,
-        "gemini_configured": memory_engine.model is not None
-    }
+    try:
+        # Test database connection
+        conn = memory_engine.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = cursor.fetchall()
+        conn.close()
+        
+        return {
+            "status": "success", 
+            "message": "Backend is working!",
+            "database_url": settings.DATABASE_URL,
+            "gemini_configured": memory_engine.model is not None,
+            "tables": [table[0] for table in tables],
+            "files_in_app": os.listdir(current_dir)
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
@@ -119,18 +133,25 @@ async def get_conversations(user_id: str):
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now()}
 
-# Handle OPTIONS requests for all endpoints
+# Handle OPTIONS requests for CORS preflight
 @app.options("/{rest_of_path:path}")
-async def preflight_handler(request: Request, rest_of_path: str):
+async def preflight_handler():
     return JSONResponse(
         content={"status": "ok"},
         headers={
-            "Access-Control-Allow-Origin": "https://memory-ai-assistant.vercel.app",
+            "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
             "Access-Control-Allow-Headers": "*",
-            "Access-Control-Allow-Credentials": "true"
         }
     )
+
+@app.middleware("http")
+async def add_cors_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
 
 if __name__ == "__main__":
     import uvicorn
