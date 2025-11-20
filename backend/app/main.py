@@ -11,26 +11,46 @@ from config import settings
 
 app = FastAPI(title="Memory AI Assistant with Gemini", version="1.0.0")
 
-# Enhanced CORS middleware
+# Enhanced CORS middleware - MUST be before route definitions
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://memory-ai-assistant.vercel.app",
-        "https://memory-ai-assistant-wpwf.vercel.app", 
+        "https://memory-ai-assistant-wpwf.vercel.app",
         "http://localhost:3000",
         "http://localhost:8000",
+        "*"  # Temporary for testing
     ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
 )
 
 # Initialize memory engine with Gemini
 memory_engine = MemoryEngine(settings.DATABASE_URL, settings.GEMINI_API_KEY)
 
+# Add explicit OPTIONS handler for preflight requests
 @app.options("/chat")
 async def options_chat():
-    return JSONResponse(content={"status": "ok"})
+    return JSONResponse(
+        content={"status": "ok"},
+        headers={
+            "Access-Control-Allow-Origin": "https://memory-ai-assistant.vercel.app",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "*"
+        }
+    )
+
+@app.options("/conversations/{user_id}")
+async def options_conversations():
+    return JSONResponse(
+        content={"status": "ok"},
+        headers={
+            "Access-Control-Allow-Origin": "https://memory-ai-assistant.vercel.app",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*"
+        }
+    )
 
 @app.get("/")
 async def root():
@@ -74,11 +94,22 @@ async def chat_endpoint(request: ChatRequest):
             )
             print(f"💾 Stored new memory about: {request.message}")
         
-        return ChatResponse(
+        response = ChatResponse(
             response=ai_response,
             conversation_id=conversation_id,
             memory_used=relevant_memories,
             timestamp=datetime.now()
+        )
+        
+        # Add CORS headers to response
+        headers = {
+            "Access-Control-Allow-Origin": "https://memory-ai-assistant.vercel.app",
+            "Access-Control-Allow-Credentials": "true"
+        }
+        
+        return JSONResponse(
+            content=response.dict(),
+            headers=headers
         )
         
     except Exception as e:
@@ -89,7 +120,14 @@ async def chat_endpoint(request: ChatRequest):
 async def get_conversations(user_id: str):
     try:
         conversations = memory_engine.get_conversation_history(user_id)
-        return JSONResponse(content={"conversations": conversations})
+        headers = {
+            "Access-Control-Allow-Origin": "https://memory-ai-assistant.vercel.app",
+            "Access-Control-Allow-Credentials": "true"
+        }
+        return JSONResponse(
+            content={"conversations": conversations},
+            headers=headers
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
