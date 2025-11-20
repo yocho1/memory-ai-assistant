@@ -4,10 +4,26 @@ from fastapi.responses import JSONResponse
 import uuid
 from datetime import datetime
 from typing import List
+import sys
+import os
 
-from models import *
-from memory_engine import MemoryEngine
-from config import settings
+# Add the app directory to Python path for Vercel
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+try:
+    # Try relative imports first
+    from .models import *
+    from .memory_engine import MemoryEngine
+    from .config import settings
+except ImportError:
+    try:
+        # Fallback for absolute imports
+        from models import *
+        from memory_engine import MemoryEngine
+        from config import settings
+    except ImportError as e:
+        print(f"Import error: {e}")
+        raise
 
 app = FastAPI(title="Memory AI Assistant with Gemini", version="1.0.0")
 
@@ -25,32 +41,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add CORS headers middleware for all responses
-@app.middleware("http")
-async def add_cors_header(request: Request, call_next):
-    response = await call_next(request)
-    origin = request.headers.get('origin', '')
-    
-    allowed_origins = [
-        "https://memory-ai-assistant.vercel.app",
-        "https://memory-ai-assistant-wpwf.vercel.app",
-        "http://localhost:3000",
-    ]
-    
-    if origin in allowed_origins:
-        response.headers["Access-Control-Allow-Origin"] = origin
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    response.headers["Access-Control-Allow-Credentials"] = "true"
-    
-    return response
-
 # Initialize memory engine with Gemini
 memory_engine = MemoryEngine(settings.DATABASE_URL, settings.GEMINI_API_KEY)
 
 @app.get("/")
 async def root():
     return {"message": "Memory AI Assistant with Gemini API"}
+
+# Add a test endpoint to verify everything works
+@app.get("/test")
+async def test_endpoint():
+    return {
+        "status": "success", 
+        "message": "Backend is working!",
+        "database_url": settings.DATABASE_URL,
+        "gemini_configured": memory_engine.model is not None
+    }
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
