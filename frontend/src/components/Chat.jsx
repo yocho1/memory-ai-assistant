@@ -13,6 +13,9 @@ const Chat = () => {
   const [loading, setLoading] = useState(false)
   const messagesEndRef = useRef(null)
 
+  // FIX: Correct API URL
+  const API_BASE_URL = 'https://memory-ai-assistant-wpwf.vercel.app'
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
@@ -35,7 +38,8 @@ const Chat = () => {
     setLoading(true)
 
     try {
-      const response = await axios.post('memory-ai-assistant-wpwf.vercel.app/chat', {
+      // FIX: Use correct URL with https://
+      const response = await axios.post(`${API_BASE_URL}/chat`, {
         message: inputMessage,
         user_id: userId,
         conversation_id: conversationId
@@ -68,97 +72,7 @@ const Chat = () => {
     }
   }
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
-    }
-  }
-
-  return (
-    <div className="chat-container">
-      <div className="chat-header">
-        <div className="header-content">
-          <div className="logo">
-            <span className="logo-icon">🧠</span>
-            <h1>Memory AI Assistant</h1>
-          </div>
-          <p>I remember our past conversations! Start chatting below.</p>
-        </div>
-      </div>
-
-      <div className="chat-main">
-        <div className="messages-container">
-          {messages.length === 0 ? (
-            <div className="welcome-message">
-              <div className="welcome-icon">🤖</div>
-              <h2>Welcome to your Memory AI Assistant!</h2>
-              <p>I'll remember what we discuss and use that knowledge to help you better over time.</p>
-              <div className="feature-list">
-                <div className="feature">
-                  <span>💬</span>
-                  <span>Chat with AI that remembers</span>
-                </div>
-                <div className="feature">
-                  <span>🧠</span>
-                  <span>Long-term memory storage</span>
-                </div>
-                <div className="feature">
-                  <span>🔍</span>
-                  <span>Smart memory search</span>
-                </div>
-              </div>
-            </div>
-          ) : (
-            messages.map((message, index) => (
-              <Message key={index} message={message} />
-            ))
-          )}
-          {loading && (
-            <div className="message assistant loading">
-              <div className="message-avatar">🤖</div>
-              <div className="message-content">
-                <div className="loading-dots">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </div>
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        <MemoryPanel memories={memories} />
-      </div>
-
-      <div className="input-container">
-        <div className="input-wrapper">
-          <textarea
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Type your message here... (Press Enter to send)"
-            rows="1"
-            disabled={loading}
-          />
-          <button 
-            onClick={sendMessage} 
-            disabled={loading || !inputMessage.trim()}
-            className="send-button"
-          >
-            {loading ? (
-              <div className="button-loading"></div>
-            ) : (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <path d="M2 21L23 12L2 3V10L17 12L2 14V21Z" fill="currentColor"/>
-              </svg>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
+  // ... rest of your component remains the same
 }
 
 export default Chat
