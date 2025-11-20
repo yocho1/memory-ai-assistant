@@ -1,0 +1,139 @@
+.memory-panel {
+  width: 320px;
+  background: white;
+  padding: 0;
+  border-left: 1px solid #e2e8f0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.memory-header {
+  padding: 25px;
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.memory-icon {
+  font-size: 1.5em;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.memory-header h3 {
+  color: #1e293b;
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0;
+  flex: 1;
+}
+
+.memory-count {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.no-memories {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 25px;
+}
+
+.empty-state {
+  text-align: center;
+  color: #64748b;
+}
+
+.empty-icon {
+  font-size: 3em;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.empty-state p {
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #475569;
+}
+
+.empty-state span {
+  font-size: 0.9em;
+  opacity: 0.7;
+}
+
+.memories-list {
+  flex: 1;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.memory-item {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.memory-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+  border-color: #c7d2fe;
+}
+
+.memory-number {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8em;
+  font-weight: 600;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.memory-content {
+  font-size: 0.85em;
+  line-height: 1.5;
+  color: #475569;
+  flex: 1;
+}
+
+@media (max-width: 768px) {
+  .memory-panel {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid #e2e8f0;
+    max-height: 200px;
+  }
+  
+  .memory-header {
+    padding: 20px;
+  }
+  
+  .memories-list {
+    padding: 15px;
+    gap: 10px;
+  }
+}

@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 from typing import List
 
+# Correct imports - use relative imports within the app package
 from .models import *
 from .memory_engine import MemoryEngine
 from .config import settings
@@ -14,10 +15,14 @@ app = FastAPI(title="Memory AI Assistant with Gemini", version="1.0.0")
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",  # React dev server
+        "http://127.0.0.1:3000",  # Alternative localhost
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allow all methods including OPTIONS
+    allow_headers=["*"],  # Allow all headers
+    expose_headers=["*"]   # Expose all headers to frontend
 )
 
 # Initialize memory engine with Gemini
@@ -30,11 +35,15 @@ async def root():
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     try:
+        print(f" Received message from user {request.user_id}: {request.message}")
+        
         # Get relevant memories
         relevant_memories = memory_engine.search_memories(request.user_id, request.message)
+        print(f" Found {len(relevant_memories)} relevant memories")
         
         # Get conversation history
         conversation_history = memory_engine.get_conversation_history(request.user_id)
+        print(f" Found {len(conversation_history)} previous conversations")
         
         # Generate AI response using Gemini
         ai_response = memory_engine.generate_response(
@@ -50,6 +59,7 @@ async def chat_endpoint(request: ChatRequest):
         ]
         
         conversation_id = memory_engine.store_conversation(request.user_id, messages)
+        print(f" Stored conversation with ID: {conversation_id}")
         
         # Store important information as memory
         if len(relevant_memories) == 0 or "remember" in request.message.lower():
@@ -58,6 +68,7 @@ async def chat_endpoint(request: ChatRequest):
                 f"User discussed: {request.message}",
                 {"type": "conversation_topic", "timestamp": datetime.now().isoformat()}
             )
+            print(f" Stored new memory about: {request.message}")
         
         return ChatResponse(
             response=ai_response,
@@ -67,6 +78,7 @@ async def chat_endpoint(request: ChatRequest):
         )
         
     except Exception as e:
+        print(f" Error in chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/conversations/{user_id}")
