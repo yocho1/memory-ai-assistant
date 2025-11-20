@@ -18,9 +18,9 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "https://memory-ai-assistant-wikd.vercel.app",  # Your frontend URL
+        "https://memory-ai-assistant-wikd.vercel.app/",  # Your frontend URL
         "https://memory-ai-assistant-55hj.vercel.app",
-        "memory-ai-assistant-55hj.vercel.app"   # Your backend URL (for testing)
+        "https://memory-ai-assistant-wikd.vercel.app"   # Your backend URL (for testing)
     ],
     allow_credentials=True,
     allow_methods=["*"],
