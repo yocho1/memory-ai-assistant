@@ -1,11 +1,12 @@
-# In your config.py, add a fallback
 import os
-from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class Settings:
+    # Use /tmp directory for SQLite on Vercel (writable)
+    DATABASE_PATH = "/tmp/memory.db" if os.path.exists("/tmp") else "./memory.db"
+    DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite:///{DATABASE_PATH}")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./memory.db")
     
-    # Add validation
-    def is_gemini_configured(self) -> bool:
-        return bool(self.GEMINI_API_KEY and self.GEMINI_API_KEY != "")
+settings = Settings()
