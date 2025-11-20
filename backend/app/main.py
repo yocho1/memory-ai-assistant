@@ -97,7 +97,6 @@ async def health_check():
 # Add this at the VERY END of main.py
 app = app  # This helps Vercel recognize the app
 
-# Vercel handler
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
