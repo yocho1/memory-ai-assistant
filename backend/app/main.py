@@ -6,9 +6,9 @@ from datetime import datetime
 from typing import List
 
 # Correct imports - use relative imports within the app package
-from .models import *
-from .memory_engine import MemoryEngine
-from .config import settings
+from app.models import *
+from app.memory_engine import MemoryEngine
+from app.config import settings
 
 app = FastAPI(title="Memory AI Assistant with Gemini", version="1.0.0")
 
