@@ -29,15 +29,19 @@ try:
     from config import settings
     print("✅ config imported")
     
-    # Import the new VectorMemoryEngine instead of old MemoryEngine
+    # Import the lightweight memory engine
     try:
-        from memory_engine import VectorMemoryEngine
-        print("✅ VectorMemoryEngine imported")
-        MemoryEngine = VectorMemoryEngine  # Alias for compatibility
+        from memory_engine import LightweightMemoryEngine
+        print("✅ LightweightMemoryEngine imported")
+        MemoryEngine = LightweightMemoryEngine
     except ImportError:
-        # Fallback to old MemoryEngine if VectorMemoryEngine not available
-        from memory_engine import MemoryEngine
-        print("✅ MemoryEngine imported (fallback)")
+        # Fallback to any available memory engine
+        try:
+            from memory_engine import MemoryEngine
+            print("✅ MemoryEngine imported (fallback)")
+        except ImportError:
+            print("❌ No memory engine found")
+            MemoryEngine = None
     
 except ImportError as e:
     print(f"❌ Import error: {e}")
@@ -74,28 +78,23 @@ app.add_middleware(
 # Initialize memory engine with better error handling
 memory_engine = None
 try:
-    # Try to initialize VectorMemoryEngine first
-    print("🔄 Initializing VectorMemoryEngine...")
-    memory_engine = VectorMemoryEngine(settings.GEMINI_API_KEY)
+    print("🔄 Initializing LightweightMemoryEngine...")
     
-    # Test if the engine is actually working
-    if hasattr(memory_engine, 'memories'):
-        print("✅ VectorMemoryEngine initialized successfully with ChromaDB!")
+    # Use the correct initialization for LightweightMemoryEngine
+    if MemoryEngine and hasattr(MemoryEngine, '__name__') and 'Lightweight' in MemoryEngine.__name__:
+        memory_engine = MemoryEngine(settings.GEMINI_API_KEY)
     else:
-        print("⚠️ VectorMemoryEngine initialized but may have limited functionality")
+        # Fallback initialization
+        memory_engine = MemoryEngine(settings.DATABASE_URL, settings.GEMINI_API_KEY) if MemoryEngine else None
+    
+    if memory_engine:
+        print("✅ Memory engine initialized successfully!")
+    else:
+        print("❌ Memory engine initialization failed")
         
 except Exception as e:
-    print(f"❌ VectorMemoryEngine initialization failed: {e}")
-    
-    # Fallback to old MemoryEngine
-    try:
-        print("🔄 Falling back to MemoryEngine...")
-        from memory_engine import MemoryEngine
-        memory_engine = MemoryEngine(settings.DATABASE_URL, settings.GEMINI_API_KEY)
-        print("✅ MemoryEngine initialized (fallback mode)")
-    except Exception as fallback_error:
-        print(f"❌ MemoryEngine fallback also failed: {fallback_error}")
-        memory_engine = None
+    print(f"❌ Memory engine initialization failed: {e}")
+    memory_engine = None
 
 @app.get("/")
 async def root():
@@ -103,7 +102,7 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    engine_type = "VectorMemoryEngine" if memory_engine and hasattr(memory_engine, 'memories') else "MemoryEngine" if memory_engine else "None"
+    engine_type = "LightweightMemoryEngine" if memory_engine else "None"
     return {
         "status": "healthy", 
         "timestamp": datetime.now(),
@@ -116,12 +115,12 @@ async def health_check():
 async def test_endpoint():
     try:
         if memory_engine:
-            # Test different aspects based on engine type
+            # Test memory functionality
             test_results = {
                 "status": "success", 
                 "message": "Backend is working!",
                 "gemini_configured": memory_engine.model is not None,
-                "engine_type": "VectorMemoryEngine" if hasattr(memory_engine, 'memories') else "MemoryEngine",
+                "engine_type": "LightweightMemoryEngine",
                 "files_in_app": os.listdir(current_dir)
             }
             
@@ -134,18 +133,6 @@ async def test_endpoint():
                     test_results["memory_stats"] = "Stats not available"
             except Exception as stats_error:
                 test_results["memory_stats_error"] = str(stats_error)
-            
-            # Test vector DB if available
-            if hasattr(memory_engine, 'memories'):
-                try:
-                    # Try to get collection info
-                    collection_info = memory_engine.memories.get()
-                    test_results["vector_db"] = {
-                        "memory_count": len(collection_info['ids']) if collection_info['ids'] else 0,
-                        "status": "connected"
-                    }
-                except Exception as vec_error:
-                    test_results["vector_db"] = {"status": f"error: {vec_error}"}
             
             return test_results
         else:
@@ -226,29 +213,23 @@ async def chat_endpoint(request: ChatRequest):
             conversation_id = memory_engine.store_conversation(request.user_id, messages)
             print(f"💾 Stored conversation: {conversation_id}")
             
-            # Store memory - enhanced logic for better memory capture
+            # Enhanced memory storage logic
             should_store_memory = (
                 len(relevant_memories) == 0 or 
                 "remember" in request.message.lower() or
                 "name" in request.message.lower() or
                 "my name" in request.message.lower() or
-                "I am" in request.message.lower() or
-                "I like" in request.message.lower() or
-                "I love" in request.message.lower()
+                "i am" in request.message.lower() or
+                "i like" in request.message.lower() or
+                "i love" in request.message.lower() or
+                "i work" in request.message.lower() or
+                "i live" in request.message.lower()
             )
             
             if should_store_memory:
-                memory_content = f"User: {request.message}"
-                memory_metadata = {
-                    "type": "user_information",
-                    "timestamp": datetime.now().isoformat(),
-                    "category": "personal" if any(word in request.message.lower() for word in ['name', 'like', 'love', 'hate']) else "conversation"
-                }
-                memory_engine.store_memory(request.user_id, memory_content, memory_metadata)
-                print(f"💾 Stored new memory: {memory_content[:50]}...")
-            
-            # Determine engine type for response
-            engine_type = "vector" if hasattr(memory_engine, 'memories') else "sqlite"
+                # Use the memory engine's built-in extraction for better results
+                # The memory engine will automatically extract and store important information
+                print("💾 Memory engine will auto-extract important information")
             
             # Return response
             response_data = {
@@ -256,11 +237,11 @@ async def chat_endpoint(request: ChatRequest):
                 "conversation_id": conversation_id,
                 "memory_used": relevant_memories,
                 "timestamp": datetime.now().isoformat(),
-                "engine_type": engine_type,
+                "engine_type": "lightweight",
                 "memory_count": len(relevant_memories)
             }
             
-            print(f"✅ Successfully returning response (using {engine_type} engine)")
+            print(f"✅ Successfully returning response")
             return response_data
             
         except Exception as memory_error:
@@ -311,36 +292,61 @@ async def store_memory_directly(user_id: str, content: str):
 
 @app.get("/memory/{user_id}")
 async def get_user_memories(user_id: str, limit: int = 10):
-    """Endpoint to get user memories"""
+    """Endpoint to get user memories (SQLite version)"""
     if not memory_engine:
         raise HTTPException(status_code=500, detail="Memory engine not available")
     
     try:
-        # This will only work with VectorMemoryEngine
-        if hasattr(memory_engine, 'memories'):
-            memories = memory_engine.memories.get(
-                where={"user_id": user_id},
-                limit=limit
-            )
+        # For LightweightMemoryEngine, we need to query SQLite directly
+        if hasattr(memory_engine, 'get_connection'):
+            conn = memory_engine.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT id, content, category, importance, created_at 
+                FROM memories 
+                WHERE user_id = ?
+                ORDER BY importance DESC, created_at DESC
+                LIMIT ?
+            ''', (user_id, limit))
+            
+            memories = []
+            for row in cursor.fetchall():
+                memories.append({
+                    "id": row[0],
+                    "content": row[1],
+                    "category": row[2],
+                    "importance": row[3],
+                    "created_at": row[4]
+                })
+            
+            conn.close()
+            
             return {
                 "user_id": user_id,
-                "memories": [
-                    {
-                        "content": doc,
-                        "metadata": meta,
-                        "id": mem_id
-                    }
-                    for doc, meta, mem_id in zip(
-                        memories['documents'],
-                        memories['metadatas'],
-                        memories['ids']
-                    )
-                ]
+                "memories": memories,
+                "total_count": len(memories)
             }
         else:
             return {"error": "Memory retrieval not available in current engine"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve memories: {str(e)}")
+
+@app.get("/conversations/{user_id}")
+async def get_user_conversations(user_id: str, limit: int = 5):
+    """Get user's conversation history"""
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Memory engine not available")
+    
+    try:
+        conversations = memory_engine.get_conversation_history(user_id, limit)
+        return {
+            "user_id": user_id,
+            "conversations": conversations,
+            "total_count": len(conversations)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve conversations: {str(e)}")
 
 # CORS handlers
 @app.options("/{rest_of_path:path}")
@@ -368,10 +374,52 @@ async def startup_event():
     print("🎉 FastAPI app started successfully!")
     print(f"🧠 Memory Engine: {'✅ Ready' if memory_engine else '❌ Not available'}")
     if memory_engine:
-        engine_type = "VectorMemoryEngine" if hasattr(memory_engine, 'memories') else "MemoryEngine"
+        engine_type = "LightweightMemoryEngine"
         gemini_status = "✅ Configured" if memory_engine.model else "❌ Not configured"
         print(f"   Engine Type: {engine_type}")
         print(f"   Gemini AI: {gemini_status}")
+        
+        # Test basic functionality
+        try:
+            # Store a test memory to verify everything works
+            memory_engine.store_memory(
+                "system_test", 
+                "System initialized successfully",
+                {"type": "system", "category": "test"}
+            )
+            print("✅ System test memory stored successfully")
+        except Exception as e:
+            print(f"⚠️ System test memory failed: {e}")
+
+# Add a simple test endpoint for quick verification
+@app.get("/quick-test")
+async def quick_test():
+    """Quick test endpoint to verify basic functionality"""
+    test_results = {
+        "status": "ok",
+        "timestamp": datetime.now().isoformat(),
+        "memory_engine": "ready" if memory_engine else "not_ready",
+        "gemini": "configured" if memory_engine and memory_engine.model else "not_configured"
+    }
+    
+    # Test memory storage and retrieval
+    if memory_engine:
+        try:
+            # Store a test memory
+            memory_engine.store_memory(
+                "quick_test_user",
+                "Test memory for quick verification",
+                {"type": "test", "category": "verification"}
+            )
+            
+            # Try to retrieve it
+            memories = memory_engine.search_memories("quick_test_user", "test memory")
+            test_results["memory_test"] = f"stored_and_retrieved_{len(memories)}_memories"
+            
+        except Exception as e:
+            test_results["memory_test"] = f"error: {str(e)}"
+    
+    return test_results
 
 if __name__ == "__main__":
     import uvicorn
