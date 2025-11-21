@@ -1,109 +1,188 @@
-# memory_engine.py
-import chromadb
-import uuid
+import sqlite3
 import json
+import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 import google.generativeai as genai
-from sentence_transformers import SentenceTransformer
 
-class VectorMemoryEngine:
-    def __init__(self, gemini_api_key: str, persist_directory: str = "/tmp/chroma_db"):
+class MemoryEngine:
+    def __init__(self, database_url: str, gemini_api_key: str):
+        self.database_url = database_url
         self.gemini_api_key = gemini_api_key
         self.model = None
-        self.embedder = None
         
-        print(f"🧠 Initializing VectorMemoryEngine...")
-        print(f"   Persist directory: {persist_directory}")
-        print(f"   Gemini API Key: {'Provided' if gemini_api_key else 'Missing'}")
+        print(f"🧠 Initializing MemoryEngine...")
+        print(f"   Database: {database_url}")
+        print(f"   API Key provided: {bool(gemini_api_key and gemini_api_key.strip())}")
+        
+        if gemini_api_key and gemini_api_key.strip():
+            print(f"   API Key length: {len(gemini_api_key)} characters")
+            print(f"   API Key starts with: {gemini_api_key[:10]}...")
+        else:
+            print("   ❌ No valid Gemini API key found!")
         
         try:
-            # Initialize ChromaDB
-            self.client = chromadb.PersistentClient(path=persist_directory)
-            self.memories = self.client.get_or_create_collection(
-                name="conversation_memories",
-                metadata={"hnsw:space": "cosine"}
-            )
-            print("✅ ChromaDB initialized successfully!")
-            
-            # Initialize embedding model
-            self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
-            print("✅ Embedding model loaded!")
-            
-            # Initialize Gemini
+            self._init_database()
             self._setup_gemini()
-            
-            # Initialize SQLite for conversation history (compatibility)
-            self._init_sqlite()
-            
-            print("✅ VectorMemoryEngine fully initialized!")
-            
+            print("✅ MemoryEngine initialized successfully!")
         except Exception as e:
-            print(f"❌ VectorMemoryEngine initialization failed: {e}")
+            print(f"❌ MemoryEngine initialization failed: {e}")
             import traceback
             print(f"🔍 Traceback: {traceback.format_exc()}")
             self.model = None
-
+        
     def _setup_gemini(self):
-        """Setup Gemini AI"""
-        if not self.gemini_api_key:
-            print("❌ No Gemini API key - running in fallback mode")
+        """Configure Gemini AI with comprehensive error handling"""
+        if not self.gemini_api_key or not self.gemini_api_key.strip():
+            print("❌ No Gemini API key available - running in fallback mode")
             self.model = None
             return
             
         try:
+            print("🔧 Configuring Gemini AI...")
             genai.configure(api_key=self.gemini_api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
-            print("✅ Gemini AI configured successfully!")
+            
+            # List available models
+            print("📋 Checking available models...")
+            available_models = []
+            try:
+                for model in genai.list_models():
+                    if 'generateContent' in model.supported_generation_methods:
+                        available_models.append(model.name)
+                        print(f"   ✅ Available: {model.name}")
+            except Exception as e:
+                print(f"   ❌ Failed to list models: {e}")
+                self.model = None
+                return
+            
+            if not available_models:
+                print("   ❌ No generateContent models available")
+                self.model = None
+                return
+            
+            # Try to use gemini-pro model
+            model_name = 'models/gemini-pro'
+            if model_name in available_models:
+                try:
+                    self.model = genai.GenerativeModel(model_name)
+                    print(f"✅ Successfully loaded model: {model_name}")
+                    
+                    # Test the model with a simple prompt
+                    test_response = self.model.generate_content("Hello, respond with just 'OK'")
+                    print(f"✅ Model test successful: {test_response.text}")
+                    return
+                    
+                except Exception as e:
+                    print(f"❌ Failed to initialize {model_name}: {e}")
+            
+            # Fallback to any available model
+            for model_name in available_models:
+                try:
+                    self.model = genai.GenerativeModel(model_name)
+                    print(f"✅ Successfully loaded fallback model: {model_name}")
+                    return
+                except Exception as e:
+                    print(f"❌ Failed to initialize {model_name}: {e}")
+                    continue
+            
+            print("❌ No Gemini models could be initialized")
+            self.model = None
+            
         except Exception as e:
             print(f"❌ Gemini setup failed: {e}")
             self.model = None
+        
+    def _init_database(self):
+        """Initialize SQLite database with proper error handling"""
+        try:
+            # Extract file path from database URL
+            db_path = self.database_url.replace('sqlite:///', '')
+            print(f"📁 Database path: {db_path}")
+            
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            # Enable foreign keys
+            cursor.execute("PRAGMA foreign_keys = ON")
+            
+            # Create conversations table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    title TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Create messages table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS messages (
+                    id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+                    content TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+                )
+            ''')
+            
+            # Create memory_vectors table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS memory_vectors (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    metadata TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Create indexes for better performance
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_memory_vectors_user_id ON memory_vectors(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_memory_vectors_content ON memory_vectors(content)')
+            
+            conn.commit()
+            conn.close()
+            print("✅ Database initialized successfully!")
+            
+        except Exception as e:
+            print(f"❌ Database initialization failed: {e}")
+            raise
 
-    def _init_sqlite(self):
-        """Initialize SQLite for conversation history"""
-        import sqlite3
-        self.db_path = "/tmp/conversations.db"
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS conversations (
-                id TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL,
-                title TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS messages (
-                id TEXT PRIMARY KEY,
-                conversation_id TEXT NOT NULL,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
-        print("✅ SQLite conversation database initialized!")
+    def get_connection(self):
+        """Get database connection with error handling"""
+        try:
+            db_path = self.database_url.replace('sqlite:///', '')
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            return conn
+        except Exception as e:
+            print(f"❌ Database connection failed: {e}")
+            raise
 
     def store_conversation(self, user_id: str, messages: List[Dict]) -> str:
-        """Store conversation in SQLite"""
-        import sqlite3
+        """Store a conversation and return conversation ID"""
+        if not messages:
+            return f"empty_{datetime.now().timestamp()}"
+            
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self.get_connection()
             cursor = conn.cursor()
             
             conversation_id = str(uuid.uuid4())
-            title = messages[0]['content'][:50] + "..." if messages[0]['content'] else "New conversation"
+            title = messages[0]['content'][:50] + "..." if len(messages[0]['content']) > 50 else messages[0]['content']
             
+            # Create conversation
             cursor.execute(
                 "INSERT INTO conversations (id, user_id, title) VALUES (?, ?, ?)",
                 (conversation_id, user_id, title)
             )
             
+            # Store messages
             for message in messages:
                 message_id = str(uuid.uuid4())
                 cursor.execute(
@@ -114,7 +193,7 @@ class VectorMemoryEngine:
             conn.commit()
             conn.close()
             
-            print(f"💾 Stored conversation: {conversation_id}")
+            print(f"💾 Stored conversation: {conversation_id} with {len(messages)} messages")
             return conversation_id
             
         except Exception as e:
@@ -122,18 +201,17 @@ class VectorMemoryEngine:
             return f"error_{datetime.now().timestamp()}"
 
     def get_conversation_history(self, user_id: str, limit: int = 5) -> List[Dict]:
-        """Get conversation history from SQLite"""
-        import sqlite3
+        """Get conversation history for a user"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
+            conn = self.get_connection()
             cursor = conn.cursor()
             
+            # Get recent conversations
             cursor.execute('''
-                SELECT id, title, created_at
+                SELECT id, title, created_at, updated_at
                 FROM conversations 
                 WHERE user_id = ?
-                ORDER BY created_at DESC 
+                ORDER BY updated_at DESC 
                 LIMIT ?
             ''', (user_id, limit))
             
@@ -141,6 +219,7 @@ class VectorMemoryEngine:
             for row in cursor.fetchall():
                 conv = dict(row)
                 
+                # Get messages for this conversation
                 cursor.execute('''
                     SELECT role, content, timestamp
                     FROM messages 
@@ -152,6 +231,7 @@ class VectorMemoryEngine:
                 conversations.append(conv)
             
             conn.close()
+            print(f"📖 Retrieved {len(conversations)} conversations for user {user_id}")
             return conversations
             
         except Exception as e:
@@ -159,92 +239,108 @@ class VectorMemoryEngine:
             return []
 
     def store_memory(self, user_id: str, content: str, metadata: Dict = None):
-        """Store memory in vector database with embedding"""
+        """Store a memory for the user"""
         if not content or not content.strip():
             return
             
         try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
             memory_id = str(uuid.uuid4())
             
-            self.memories.add(
-                documents=[content],
-                metadatas=[{
-                    "user_id": user_id,
-                    "type": "conversation_memory",
-                    "timestamp": datetime.now().isoformat(),
-                    "importance": self._calculate_importance(content),
-                    ** (metadata or {})
-                }],
-                ids=[memory_id]
-            )
+            cursor.execute('''
+                INSERT INTO memory_vectors (id, user_id, content, metadata)
+                VALUES (?, ?, ?, ?)
+            ''', (memory_id, user_id, content, json.dumps(metadata or {})))
             
-            print(f"💾 Stored vector memory: {content[:50]}...")
+            conn.commit()
+            conn.close()
+            
+            print(f"💾 Stored memory for user {user_id}: {content[:50]}...")
             
         except Exception as e:
             print(f"❌ Failed to store memory: {e}")
 
-    def search_memories(self, user_id: str, query: str, limit: int = 5) -> List[str]:
-        """Semantic search for relevant memories"""
+    def search_memories(self, user_id: str, query: str, limit: int = 3) -> List[str]:
+        """Search for relevant memories using keyword matching"""
+        if not query or not query.strip():
+            return []
+            
         try:
-            results = self.memories.query(
-                query_texts=[query],
-                where={"user_id": user_id},
-                n_results=limit
-            )
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # Split query into keywords for better matching
+            keywords = [word.strip().lower() for word in query.split() if len(word.strip()) > 2]
             
             memories = []
-            if results['documents'] and results['documents'][0]:
-                for i, doc in enumerate(results['documents'][0]):
-                    similarity = 1 - results['distances'][0][i]  # Convert to similarity score
-                    if similarity > 0.3:  # Only include reasonably similar memories
-                        memories.append(doc)
             
-            print(f"🔍 Found {len(memories)} relevant memories for: '{query}'")
+            if keywords:
+                # Search for memories containing any of the keywords
+                like_patterns = [f'%{keyword}%' for keyword in keywords]
+                placeholders = ','.join(['?'] * len(like_patterns))
+                
+                cursor.execute(f'''
+                    SELECT DISTINCT content 
+                    FROM memory_vectors 
+                    WHERE user_id = ? 
+                    AND ({' OR '.join(['content LIKE ?'] * len(like_patterns))})
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                ''', [user_id] + like_patterns + [limit])
+                
+                memories = [row['content'] for row in cursor.fetchall()]
+            
+            # If no keyword matches or no keywords, get recent memories
+            if not memories:
+                cursor.execute('''
+                    SELECT content 
+                    FROM memory_vectors 
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                ''', (user_id, limit))
+                memories = [row['content'] for row in cursor.fetchall()]
+            
+            conn.close()
+            print(f"🔍 Found {len(memories)} relevant memories for query: '{query}'")
             return memories
             
         except Exception as e:
-            print(f"❌ Memory search error: {e}")
+            print(f"❌ Failed to search memories: {e}")
             return []
 
-    def _calculate_importance(self, content: str) -> float:
-        """Calculate importance score for memory"""
-        important_keywords = [
-            'name', 'live', 'work', 'like', 'love', 'hate', 'favorite', 
-            'prefer', 'remember', 'important', 'always', 'never'
-        ]
-        content_lower = content.lower()
-        
-        score = 0.1  # Base score
-        
-        # Boost score for personal information
-        for keyword in important_keywords:
-            if keyword in content_lower:
-                score += 0.2
-        
-        return min(score, 1.0)
-
     def generate_response(self, user_message: str, context_memories: List[str], conversation_history: List[Dict]) -> str:
-        """Generate response using Gemini with memory context"""
-        # Fallback if no Gemini
+        """
+        Generate a contextual response using Gemini AI or fallback
+        """
+        # Fallback response if no Gemini model
         if self.model is None:
             return self._generate_fallback_response(user_message, context_memories, conversation_history)
         
         try:
-            prompt = self._build_intelligent_prompt(user_message, context_memories, conversation_history)
+            # Build the context prompt
+            prompt = self._build_prompt(user_message, context_memories, conversation_history)
             
-            print(f"🤖 Generating AI response with {len(context_memories)} memories...")
+            print(f"🤖 Generating AI response...")
+            print(f"   Prompt length: {len(prompt)} characters")
+            print(f"   Context memories: {len(context_memories)}")
+            print(f"   Conversation history items: {len(conversation_history)}")
             
+            # Generate response
             response = self.model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
                     temperature=0.7,
                     top_p=0.8,
+                    top_k=40,
                     max_output_tokens=500,
                 )
             )
             
             response_text = response.text.strip()
-            print(f"✅ AI response generated")
+            print(f"✅ AI response generated: {response_text[:100]}...")
             
             return response_text
             
@@ -252,107 +348,128 @@ class VectorMemoryEngine:
             print(f"❌ Gemini API error: {e}")
             return self._generate_fallback_response(user_message, context_memories, conversation_history)
 
-    def _build_intelligent_prompt(self, user_message: str, context_memories: List[str], conversation_history: List[Dict]) -> str:
-        """Build intelligent prompt with memory context"""
+    def _build_prompt(self, user_message: str, context_memories: List[str], conversation_history: List[Dict]) -> str:
+        """Build the prompt for Gemini AI"""
         context_parts = []
         
-        # Add memory context
+        # Add relevant memories
         if context_memories:
-            context_parts.append("RELEVANT INFORMATION FROM OUR PAST CONVERSATIONS:")
+            context_parts.append("RELEVANT MEMORIES FROM PREVIOUS CONVERSATIONS:")
             for i, memory in enumerate(context_memories, 1):
                 context_parts.append(f"{i}. {memory}")
         else:
-            context_parts.append("No specific memories found yet.")
+            context_parts.append("No specific memories found for this context.")
         
-        # Add conversation context
-        context_parts.append("\nRECENT CONVERSATION:")
+        # Add conversation history
+        context_parts.append("\nRECENT CONVERSATION HISTORY:")
+        
         if conversation_history:
-            # Get messages from the most recent conversation
-            recent_messages = []
-            for conv in conversation_history[:1]:  # Most recent conversation
-                if 'messages' in conv:
-                    recent_messages.extend(conv['messages'][-6:])  # Last 6 messages
-            
-            for msg in recent_messages:
-                role = "User" if msg['role'] == 'user' else "Assistant"
-                context_parts.append(f"{role}: {msg['content']}")
+            for conv in conversation_history[-3:]:  # Last 3 conversations
+                if 'messages' in conv and conv['messages']:
+                    context_parts.append(f"\n--- Conversation: {conv.get('title', 'Previous chat')} ---")
+                    for msg in conv['messages'][-4:]:  # Last 4 messages per conversation
+                        role = msg.get('role', 'user')
+                        content = msg.get('content', '')[:150]  # Truncate long messages
+                        context_parts.append(f"{role}: {content}")
         else:
-            context_parts.append("No recent conversation history.")
+            context_parts.append("No previous conversation history.")
         
         context = "\n".join(context_parts)
         
-        prompt = f"""You are a helpful AI assistant with long-term memory. Use the context below to provide personalized, contextual responses.
-
-IMPORTANT: Reference past conversations and remembered information when relevant.
+        prompt = f"""You are a helpful AI assistant with memory. Use the context below to provide personalized responses.
 
 CONTEXT:
 {context}
 
 CURRENT USER MESSAGE: {user_message}
 
-YOUR RESPONSE (be natural, reference memories when appropriate):
-"""
+INSTRUCTIONS:
+1. Reference relevant memories when appropriate
+2. Maintain natural conversation flow
+3. Be concise but helpful
+4. If memories don't directly relate, focus on the current question
+
+ASSISTANT RESPONSE:"""
         
         return prompt
 
     def _generate_fallback_response(self, user_message: str, context_memories: List[str], conversation_history: List[Dict]) -> str:
-        """Intelligent fallback responses"""
-        user_lower = user_message.lower()
+        """Generate fallback response when Gemini is unavailable"""
+        # Simple rule-based responses
+        user_message_lower = user_message.lower()
         
-        # Check if user is asking about their name
-        if any(phrase in user_lower for phrase in ['my name', 'what is my name', 'remember my name', "what's my name"]):
+        if any(greeting in user_message_lower for greeting in ['hello', 'hi', 'hey', 'hola']):
             if context_memories:
-                # Try to find name in memories
-                for memory in context_memories:
-                    if 'name' in memory.lower() and 'achraf' in memory.lower():
-                        return "Your name is Achraf! I remember you telling me that."
-                return "I remember we've talked before, but I don't recall your name specifically. Could you remind me?"
+                return f"Hello again! I remember we've chatted before. What would you like to talk about today?"
             else:
-                return "I don't have your name stored yet. What is your name?"
+                return "Hello! I'm your AI assistant. I'll remember our conversations once fully configured!"
         
-        # Check for greetings
-        elif any(greet in user_lower for greet in ['hello', 'hi', 'hey']):
+        elif 'name' in user_message_lower:
             if context_memories:
-                return "Hello again! Good to see you back. How can I help you today?"
+                return "I remember you telling me your name! It's great to chat with you again."
             else:
-                return "Hello! I'm your AI assistant. I'll remember our conversations as we chat!"
+                return "Nice to meet you! I'd love to remember your name and our conversations."
         
-        # Check if user shared personal information
-        elif 'name is' in user_lower or 'my name' in user_lower:
-            # Extract name from message
-            if 'achraf' in user_lower:
-                return "Nice to meet you, Achraf! I'll remember your name for our future conversations."
-            return "Thanks for telling me your name! I'll remember that."
+        elif any(word in user_message_lower for word in ['how are you', 'how do you do']):
+            return "I'm doing well, thank you for asking! I'm here to help you with anything you need."
         
-        # Generic response with memory context
         elif context_memories:
-            return f"I remember we discussed: {context_memories[0][:50]}... What would you like to know about that?"
+            memory_preview = ', '.join([mem[:30] + '...' for mem in context_memories[:2]])
+            return f"I remember we talked about: {memory_preview}. What would you like to know more about?"
+        
         else:
-            return "Thanks for your message! I'm here to help and will remember our conversation."
+            return f"Thanks for your message! I'll remember '{user_message[:30]}...' for our future conversations. What else would you like to talk about?"
 
     def get_user_stats(self, user_id: str) -> Dict[str, Any]:
-        """Get user statistics"""
+        """Get statistics about user's conversations and memories"""
         try:
-            # Get memory count from ChromaDB
-            memories = self.memories.get(where={"user_id": user_id})
-            memory_count = len(memories['ids']) if memories['ids'] else 0
-            
-            # Get conversation count from SQLite
-            import sqlite3
-            conn = sqlite3.connect(self.db_path)
+            conn = self.get_connection()
             cursor = conn.cursor()
+            
+            # Count conversations
             cursor.execute('SELECT COUNT(*) FROM conversations WHERE user_id = ?', (user_id,))
             conversation_count = cursor.fetchone()[0]
+            
+            # Count messages
+            cursor.execute('''
+                SELECT COUNT(*) FROM messages m
+                JOIN conversations c ON m.conversation_id = c.id
+                WHERE c.user_id = ?
+            ''', (user_id,))
+            message_count = cursor.fetchone()[0]
+            
+            # Count memories
+            cursor.execute('SELECT COUNT(*) FROM memory_vectors WHERE user_id = ?', (user_id,))
+            memory_count = cursor.fetchone()[0]
+            
+            # Get latest conversation
+            cursor.execute('''
+                SELECT title, updated_at FROM conversations 
+                WHERE user_id = ? 
+                ORDER BY updated_at DESC 
+                LIMIT 1
+            ''', (user_id,))
+            latest_conv = cursor.fetchone()
+            
             conn.close()
             
-            return {
-                'memory_count': memory_count,
+            stats = {
                 'conversation_count': conversation_count,
-                'vector_db_ready': True
+                'message_count': message_count,
+                'memory_count': memory_count,
+                'latest_conversation': dict(latest_conv) if latest_conv else None
             }
             
+            print(f"📊 User stats for {user_id}: {stats}")
+            return stats
+            
         except Exception as e:
-            print(f"❌ Error getting user stats: {e}")
-            return {'memory_count': 0, 'conversation_count': 0, 'vector_db_ready': False}
+            print(f"❌ Failed to get user stats: {e}")
+            return {
+                'conversation_count': 0,
+                'message_count': 0,
+                'memory_count': 0,
+                'latest_conversation': None
+            }
 
-print("✅ VectorMemoryEngine loaded successfully!")
+print("✅ memory_engine.py loaded successfully!")
