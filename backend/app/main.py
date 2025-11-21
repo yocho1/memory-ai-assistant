@@ -122,77 +122,91 @@ async def chat_endpoint(request: ChatRequest):
         print(f"💬 Message: {request.message}")
         print(f"🆔 Conversation ID: {request.conversation_id}")
         
+        # If memory engine is not ready, provide a fallback response
         if not memory_engine:
-            error_msg = "Memory engine not initialized"
-            print(f"❌ {error_msg}")
-            return JSONResponse(
-                status_code=500,
-                content={"error": error_msg}
+            print("⚠️ Memory engine not available, using fallback response")
+            
+            fallback_response = f"I received your message: '{request.message}'. I'm currently running in basic mode without memory features. To enable full AI capabilities, please check the Gemini API configuration."
+            
+            return {
+                "response": fallback_response,
+                "conversation_id": f"fallback_{int(datetime.now().timestamp())}",
+                "memory_used": [],
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Try to use memory engine with error handling
+        try:
+            # Get relevant memories
+            relevant_memories = memory_engine.search_memories(request.user_id, request.message)
+            print(f"📚 Found {len(relevant_memories)} relevant memories")
+            
+            # Get conversation history
+            conversation_history = memory_engine.get_conversation_history(request.user_id)
+            print(f"💭 Found {len(conversation_history)} previous conversations")
+            
+            # Generate AI response
+            print("🤖 Generating AI response...")
+            ai_response = memory_engine.generate_response(
+                request.message, 
+                relevant_memories, 
+                conversation_history
             )
-        
-        # Test if we can access the memory engine methods
-        print("🧠 Testing memory engine...")
-        
-        # Get relevant memories
-        relevant_memories = memory_engine.search_memories(request.user_id, request.message)
-        print(f"📚 Found {len(relevant_memories)} relevant memories")
-        
-        # Get conversation history
-        conversation_history = memory_engine.get_conversation_history(request.user_id)
-        print(f"💭 Found {len(conversation_history)} previous conversations")
-        
-        # Generate AI response
-        print("🤖 Generating AI response...")
-        ai_response = memory_engine.generate_response(
-            request.message, 
-            relevant_memories, 
-            conversation_history
-        )
-        print(f"✅ AI response generated: {ai_response[:100]}...")
-        
-        # Store conversation
-        messages = [
-            {"role": "user", "content": request.message},
-            {"role": "assistant", "content": ai_response}
-        ]
-        
-        conversation_id = memory_engine.store_conversation(request.user_id, messages)
-        print(f"💾 Stored conversation: {conversation_id}")
-        
-        # Store memory if needed
-        if len(relevant_memories) == 0 or "remember" in request.message.lower():
-            memory_engine.store_memory(
-                request.user_id, 
-                f"User discussed: {request.message}",
-                {"type": "conversation_topic", "timestamp": datetime.now().isoformat()}
-            )
-            print(f"💾 Stored new memory")
-        
-        # Return response
-        response_data = {
-            "response": ai_response,
-            "conversation_id": conversation_id,
-            "memory_used": relevant_memories,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        print(f"✅ Successfully returning response")
-        return response_data
+            print(f"✅ AI response generated: {ai_response[:100]}...")
+            
+            # Store conversation
+            messages = [
+                {"role": "user", "content": request.message},
+                {"role": "assistant", "content": ai_response}
+            ]
+            
+            conversation_id = memory_engine.store_conversation(request.user_id, messages)
+            print(f"💾 Stored conversation: {conversation_id}")
+            
+            # Store memory if needed
+            if len(relevant_memories) == 0 or "remember" in request.message.lower():
+                memory_engine.store_memory(
+                    request.user_id, 
+                    f"User discussed: {request.message}",
+                    {"type": "conversation_topic", "timestamp": datetime.now().isoformat()}
+                )
+                print(f"💾 Stored new memory")
+            
+            # Return response
+            response_data = {
+                "response": ai_response,
+                "conversation_id": conversation_id,
+                "memory_used": relevant_memories,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            print(f"✅ Successfully returning response")
+            return response_data
+            
+        except Exception as memory_error:
+            print(f"❌ Memory engine error: {memory_error}")
+            # Fallback response when memory engine has issues
+            fallback_response = f"I received your message: '{request.message}'. While my memory features are temporarily unavailable, I can still help with your question!"
+            
+            return {
+                "response": fallback_response,
+                "conversation_id": f"fallback_{int(datetime.now().timestamp())}",
+                "memory_used": [],
+                "timestamp": datetime.now().isoformat()
+            }
         
     except Exception as e:
         print(f"❌ Error in chat endpoint: {str(e)}")
         import traceback
         print(f"🔍 Full traceback: {traceback.format_exc()}")
         
-        # Return a proper error response
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "Internal server error",
-                "detail": str(e),
-                "timestamp": datetime.now().isoformat()
-            }
-        )
+        # Always return a 200 response with error message in content
+        return {
+            "response": f"I encountered an error but received your message: '{request.message}'. Please try again.",
+            "conversation_id": f"error_{int(datetime.now().timestamp())}",
+            "memory_used": [],
+            "timestamp": datetime.now().isoformat()
+        }
 
 # CORS handlers
 @app.options("/{rest_of_path:path}")
