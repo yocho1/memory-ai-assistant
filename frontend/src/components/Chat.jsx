@@ -5,7 +5,7 @@ import MemoryPanel from './MemoryPanel'
 import './Chat.css'
 
   // FIX: Correct API URL
-const API_BASE_URL = 'https://memory-ai-assistant-wpwf.vercel.app'
+const API_BASE_URL = 'https://memory-ai-assistant-2ubl.vercel.app/'
 
 const Chat = () => {
   const [messages, setMessages] = useState([])
